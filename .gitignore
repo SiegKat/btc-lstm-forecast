@@ -1,0 +1,46 @@
+# --- Data (downloaded from Binance, too large for git) ---
+data/
+*.csv
+*.zip
+
+# --- Trained model weights (large binaries) ---
+models/*.keras
+models/*.h5
+models/*.pkl
+models/*.pt
+
+# --- Python bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# --- Jupyter checkpoints ---
+.ipynb_checkpoints/
+
+# --- Environment / secrets ---
+.env
+.env.*
+
+# --- Logs and debug artifacts ---
+*.log
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+.cursor/
+
+# --- Images (allow assets/) ---
+*.png
+!assets/*.png
+
+# --- Misc large / scratch notebooks ---
+Fully_Cleaned_Untitled6.ipynb
+Siegkat.ipynb
