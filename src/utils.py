@@ -4,6 +4,7 @@ Plotting, evaluation, and scaling utilities.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -129,6 +130,20 @@ def plot_portfolio(
     ax.legend()
     fig.tight_layout()
     return fig
+
+
+def save_figure(
+    fig: plt.Figure,
+    filename: str,
+    directory: str | Path = "assets",
+    dpi: int = 180,
+) -> Path:
+    """Save a Matplotlib figure to disk and return the resolved path."""
+    output_dir = Path(directory)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / filename
+    fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    return path
 
 
 def print_metrics(metrics: dict[str, float]) -> None:

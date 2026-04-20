@@ -81,23 +81,47 @@ def prepare_sequences(
     dict
         Keys: ``X_train``, ``y_train``, ``X_test``, ``y_test``,
         ``scaler_X``, ``scaler_y``, ``training_data_len``.
+
+    Notes
+    -----
+    Feature and target scalers are fit on the training split only to
+    avoid leaking future information into the training pipeline.
     """
     df = df.copy()
     if "open_time" in df.columns:
         df = df.drop(columns=["open_time"])
 
-    if feature_cols is not None:
-        df = df[feature_cols]
+    if not 0 < train_ratio < 1:
+        raise ValueError("train_ratio must be between 0 and 1.")
+
+    if feature_cols is None:
+        df = df.select_dtypes(include=[np.number]).copy()
+    else:
+        missing_cols = [col for col in feature_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing feature columns: {missing_cols}")
+        df = df[feature_cols].copy()
+
+    if target_col not in df.columns:
+        raise ValueError(f"target_col '{target_col}' is not present in the feature set.")
+
+    if len(df) <= lookback:
+        raise ValueError("DataFrame must contain more rows than lookback.")
 
     training_data_len = math.ceil(len(df) * train_ratio)
+    if training_data_len <= lookback:
+        raise ValueError("Training split must contain more rows than lookback.")
+
+    train_df = df.iloc[:training_data_len].copy()
 
     scaler_X = MinMaxScaler()
-    scaled = scaler_X.fit_transform(df)
-    scaled_df = pd.DataFrame(scaled, columns=df.columns)
+    scaler_X.fit(train_df)
+    scaled = scaler_X.transform(df)
+    scaled_df = pd.DataFrame(scaled, columns=df.columns, index=df.index)
 
     target_idx = list(df.columns).index(target_col)
     scaler_y = MinMaxScaler()
-    scaler_y.fit(df[[target_col]])
+    scaler_y.fit(train_df[[target_col]])
 
     train_block = scaled_df.iloc[:training_data_len]
     test_block = scaled_df.iloc[training_data_len - lookback :]

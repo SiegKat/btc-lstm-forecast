@@ -15,6 +15,11 @@ from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from keras.layers import LSTM, Bidirectional, Dense, Dropout
 from keras.optimizers import Adam
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm is optional at runtime
+    tqdm = None
+
 
 def build_bidirectional_lstm(
     input_shape: tuple[int, int],
@@ -103,11 +108,19 @@ def predict_with_uncertainty(
     model: Model,
     X: np.ndarray,
     n_iterations: int = 100,
+    batch_size: int = 1024,
+    show_progress: bool = False,
+    progress_desc: str = "MC-Dropout",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run *n_iterations* stochastic forward passes (MC-Dropout).
 
     Works with modern Keras by calling the model with ``training=True``
     (dropout layers built with ``training=True`` are always active).
+
+    Predictions are generated in batches to avoid allocating very large
+    LSTM activation tensors when ``X`` contains many sequences.
+    When ``show_progress=True``, a tqdm progress bar reports batch-level
+    progress with elapsed time and ETA.
 
     Returns
     -------
@@ -116,10 +129,49 @@ def predict_with_uncertainty(
     std : np.ndarray
         Standard deviation (uncertainty) across iterations.
     """
-    predictions = np.stack(
-        [model(X, training=True).numpy() for _ in range(n_iterations)]
-    )
-    return predictions.mean(axis=0), predictions.std(axis=0)
+    if n_iterations <= 0:
+        raise ValueError("n_iterations must be positive.")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
+
+    X = np.asarray(X, dtype=np.float32)
+    running_sum = None
+    running_sq_sum = None
+    n_batches = (len(X) + batch_size - 1) // batch_size
+    progress = None
+
+    if show_progress and tqdm is not None:
+        progress = tqdm(
+            total=n_iterations * n_batches,
+            desc=progress_desc,
+            unit="batch",
+        )
+
+    for _ in range(n_iterations):
+        batch_predictions = []
+        for start in range(0, len(X), batch_size):
+            end = start + batch_size
+            batch_predictions.append(model(X[start:end], training=True).numpy())
+            if progress is not None:
+                progress.update(1)
+
+        preds = np.concatenate(batch_predictions, axis=0).astype(np.float64, copy=False)
+
+        if running_sum is None:
+            running_sum = preds
+            running_sq_sum = np.square(preds)
+        else:
+            running_sum += preds
+            running_sq_sum += np.square(preds)
+
+    mean = running_sum / n_iterations
+    variance = (running_sq_sum / n_iterations) - np.square(mean)
+    std = np.sqrt(np.maximum(variance, 0.0))
+
+    if progress is not None:
+        progress.close()
+
+    return mean, std
 
 
 def forecast_future(

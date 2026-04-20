@@ -39,7 +39,8 @@ desktop.ini
 
 # --- Images (allow assets/) ---
 *.png
-!assets/*.png
+!assets/
+!assets/**/*.png
 
 # --- Misc large / scratch notebooks ---
 Fully_Cleaned_Untitled6.ipynb

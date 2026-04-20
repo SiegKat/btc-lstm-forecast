@@ -1,107 +1,164 @@
-# Cryptocurrency Price Prediction with Deep Learning & Reinforcement Learning
+# BTC Price Forecast With LSTM and PPO
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.15+-orange.svg)](https://www.tensorflow.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-An end-to-end machine learning project that predicts **Bitcoin (BTC/USDT)** prices using deep learning and trains a reinforcement learning agent to trade autonomously.
+This repository studies BTC/USDT price forecasting from two angles:
 
-## Overview
+- A Bidirectional LSTM for next-step price prediction
+- An MC-Dropout LSTM for prediction intervals and uncertainty
+- A PPO trading agent for policy learning on the same feature space
 
-This project explores three complementary approaches to cryptocurrency trading:
+The main walkthrough lives in `notebooks/crypto_prediction.ipynb`. The notebook now exports README-ready figures to `assets/readme/` whenever it runs, so the documentation stays tied to real notebook outputs instead of manually copied screenshots.
 
-| Model | Approach | Purpose |
-|-------|----------|---------|
-| **Bidirectional LSTM** | Supervised Learning | Next-step price prediction |
-| **MC-Dropout LSTM** | Bayesian Deep Learning | Price prediction with uncertainty quantification |
-| **PPO Trading Agent** | Reinforcement Learning | Learn a Buy / Hold / Sell policy from market interaction |
+## What The Project Does
 
-## Data Pipeline
+The pipeline pulls Binance Vision candlestick data, engineers technical indicators, trains sequential models on BTC/USDT 15-minute candles, and compares deterministic forecasting against uncertainty-aware forecasting. The later notebook sections also train a PPO agent, generate a rolling future forecast, and test model quality on unseen months.
 
-Data is sourced from the [Binance Vision](https://data.binance.vision/) public repository:
+Core feature set:
 
-- **Trading pairs:** ETHUSDT, ETHBTC, ETHUSDC, BTCUSDT
-- **Intervals:** 5-minute and 15-minute candles
-- **Period:** August 2017 &ndash; September 2024
-- **Primary modelling target:** BTCUSDT 15-minute (~250K candles)
+- OHLCV inputs from Binance Vision
+- RSI, MACD, signal line, SMA(10), SMA(50)
+- Bollinger Bands, ATR, OBV, and stochastic oscillator
 
-The data loading logic uses pair-specific URL slicing to handle different listing dates and gaps in data availability (e.g. ETHUSDC's missing months). These offsets are hardcoded and must not be changed without verifying against Binance data availability.
+## Current Saved Results
 
-## Architecture
+These are the metrics from the latest exported notebook run in `assets/readme/`. They refresh whenever the notebook is rerun end-to-end.
 
-```
-                    ┌─────────────────────┐
-                    │   Binance Vision    │
-                    │   (4 pairs, 2 TFs)  │
-                    └────────┬────────────┘
-                             │
-                    ┌────────▼────────────┐
-                    │  URL Build & Trim   │
-                    │  (pair-specific     │
-                    │   month slicing)    │
-                    └────────┬────────────┘
-                             │
-                    ┌────────▼────────────┐
-                    │ Feature Engineering │
-                    │  RSI, MACD, BB, ATR │
-                    │  OBV, Stochastic    │
-                    └────────┬────────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-     ┌────────▼──────┐ ┌────▼────────┐ ┌──▼────────────┐
-     │ Bidirectional │ │ MC-Dropout  │ │  PPO Trading  │
-     │     LSTM      │ │    LSTM     │ │    Agent      │
-     └────────┬──────┘ └────┬────────┘ └──┬────────────┘
-              │              │              │
-     ┌────────▼──────┐ ┌────▼────────┐ ┌──▼────────────┐
-     │    Price      │ │  Price +    │ │   Portfolio   │
-     │  Prediction   │ │ Uncertainty │ │   Backtest    │
-     └───────────────┘ └─────────────┘ └───────────────┘
-```
+| Model | RMSE (USD) | MAE (USD) | MAPE (%) |
+| --- | ---: | ---: | ---: |
+| Bidirectional LSTM | 991.02 | 655.65 | 1.27 |
+| MC-Dropout LSTM | 849.99 | 549.38 | 1.13 |
 
-## Project Structure
+Takeaways from this run:
 
-```
+- The plain BiLSTM tracks short-term BTC direction reasonably well, but it is visibly smoother than the realized path and tends to lag sharper turns.
+- MC-Dropout is the strongest forecasting result in this saved run: it improves RMSE by about 14%, MAE by 16%, and MAPE by 11% while also producing interpretable confidence bands.
+- The training curves for both LSTM variants converge cleanly without obvious late-epoch overfitting, which suggests the models are learning useful short-horizon structure rather than just memorizing the training window.
+
+## Unseen-Data Validation
+
+The most important check in the project is the truly unseen 15-minute BTC window. The latest export shows that MC-Dropout generalizes much better over short and medium horizons, but both models lose calibration as the horizon stretches and market regime drift accumulates.
+
+| Horizon | Model | RMSE (USD) | MAE (USD) | MAPE (%) |
+| --- | --- | ---: | ---: | ---: |
+| 1 Week | Bidirectional LSTM | 723.66 | 697.03 | 1.12 |
+| 1 Week | MC-Dropout LSTM | 424.48 | 372.86 | 0.60 |
+| 1 Month | Bidirectional LSTM | 920.98 | 881.71 | 1.33 |
+| 1 Month | MC-Dropout LSTM | 364.01 | 291.35 | 0.45 |
+| 3 Months | Bidirectional LSTM | 4,978.68 | 4,036.04 | 4.35 |
+| 3 Months | MC-Dropout LSTM | 5,306.89 | 3,992.45 | 4.17 |
+
+What stands out:
+
+- Over 1 week, MC-Dropout cuts RMSE by roughly 41% and MAE by 47%, which matches the tighter visual fit in the unseen overlay.
+- Over 1 month, the gap gets even larger: MC-Dropout remains much closer to the realized level and direction, while the deterministic BiLSTM sits persistently low.
+- Over 3 months, both models degrade sharply. MC-Dropout is still slightly better on MAE and MAPE, but it becomes worse on RMSE, which signals that long-horizon regime changes dominate both models.
+
+## Figures
+
+### BTC/USDT Regime Overview
+
+This figure gives context before modeling. The most informative panel is the return histogram: 15-minute BTC returns are tightly centered near zero but still show fat tails, which means the series is dominated by many quiet bars interrupted by occasional large jumps. That is exactly the setting where uncertainty-aware forecasting can add value.
+
+![BTC/USDT market overview](assets/readme/btcusdt_15m_overview.png)
+
+### Bidirectional LSTM Training
+
+Train and validation loss both fall quickly and then flatten, with no strong late-epoch divergence. That is a good sign that the model is learning useful short-horizon structure without obvious overfitting.
+
+![Bidirectional LSTM training history](assets/readme/bilstm_training_history.png)
+
+### Bidirectional LSTM Test Predictions
+
+The deterministic model follows short-term momentum reasonably well, but its predictions are visibly smoother than the realized series. That smoothing helps denoise the path, yet it also means the model underreacts around sharper inflections.
+
+![Bidirectional LSTM predictions](assets/readme/bilstm_test_predictions.png)
+
+### MC-Dropout Training
+
+The MC-Dropout model shows a similar convergence pattern, although the validation curve is noisier because dropout remains active and makes optimization more stochastic. Even so, the model settles into a stable low-loss region.
+
+![MC-Dropout training history](assets/readme/mc_dropout_training_history.png)
+
+### MC-Dropout Uncertainty Bands
+
+This is the strongest forecasting plot in the repository right now. The mean prediction stays close to the realized path, and the 95% interval widens during more volatile segments, which makes the forecast more useful for risk-aware interpretation instead of just point prediction.
+
+![MC-Dropout uncertainty plot](assets/readme/mc_dropout_uncertainty.png)
+
+### PPO Trading Backtest
+
+The PPO portfolio curve grows well above the starting capital, but it also shows large swings and deep drawdowns. That makes the result interesting, though not yet robust enough to treat as a production-grade trading strategy. The notebook also reuses the same transformed context used for training, so this backtest should be read as optimistic.
+
+![PPO portfolio backtest](assets/readme/ppo_portfolio_backtest.png)
+
+### 500-Step Future Forecast
+
+The recursive 500-step forecast drifts downward in an unrealistically smooth path. That makes it useful mainly as a failure-mode illustration: short-horizon inference is much more credible here than long-horizon autoregressive forecasting.
+
+![500-step rolling forecast](assets/readme/future_forecast_500_step.png)
+
+### Unseen Data Overlays
+
+These three plots are the clearest test of generalization:
+
+- Over 1 week, MC-Dropout stays much closer to the realized series than the deterministic BiLSTM.
+- Over 1 month, that advantage becomes even more obvious: the BiLSTM sits persistently low while the MC mean tracks level and direction more accurately.
+- Over 3 months, both models begin to underestimate the later high-price regime, showing that regime drift becomes the main challenge.
+
+![Unseen 1-week comparison](assets/readme/unseen_overlay_1_week.png)
+
+![Unseen 1-month comparison](assets/readme/unseen_overlay_1_month.png)
+
+![Unseen 3-month comparison](assets/readme/unseen_overlay_3_months.png)
+
+### Precision Decay And Rolling Error
+
+The unseen RMSE bar chart summarizes the main generalization result: MC-Dropout is substantially better over 1 week and 1 month, but its advantage disappears by 3 months. The rolling-MAE plot shows the same story dynamically, with errors rising sharply once the unseen window moves into a harder regime.
+
+![Unseen horizon RMSE bars](assets/readme/unseen_rmse_bars.png)
+
+![Rolling unseen MAE](assets/readme/rolling_mae_unseen.png)
+
+## Reproducible Documentation Assets
+
+Running the notebook will regenerate the figures and CSV summaries below:
+
+- `assets/readme/ppo_portfolio_backtest.png`
+- `assets/readme/future_forecast_500_step.png`
+- `assets/readme/unseen_overlay_1_week.png`
+- `assets/readme/unseen_overlay_1_month.png`
+- `assets/readme/unseen_overlay_3_months.png`
+- `assets/readme/unseen_rmse_bars.png`
+- `assets/readme/rolling_mae_unseen.png`
+- `assets/readme/model_comparison.csv`
+- `assets/readme/unseen_metrics.csv`
+
+That keeps the README tied to actual notebook outputs instead of manually copied numbers.
+
+## Repository Layout
+
+```text
 btc-lstm-forecast/
 ├── README.md
 ├── requirements.txt
-├── .gitignore
-├── src/
-│   ├── __init__.py
-│   ├── data_loader.py         # Binance URL building, trimming & loading
-│   ├── features.py            # Technical indicators & sequence creation
-│   ├── lstm_model.py          # Bidirectional LSTM & MC-Dropout builders
-│   ├── rl_env.py              # Gymnasium trading env + PPO training
-│   └── utils.py               # Plotting, metrics, evaluation helpers
+├── assets/
+│   └── readme/                  # exported notebook figures for documentation
 ├── notebooks/
-│   └── crypto_prediction.ipynb  # Main analysis & unseen-data validation notebook
-├── models/                    # Saved model weights (gitignored)
-└── data/                      # Downloaded Binance CSVs (gitignored, auto-downloaded)
+│   └── crypto_prediction.ipynb  # main experiment notebook
+├── src/
+│   ├── data_loader.py
+│   ├── features.py
+│   ├── lstm_model.py
+│   ├── rl_env.py
+│   └── utils.py
+├── data/                        # downloaded market data (gitignored)
+└── models/                      # trained weights (gitignored)
 ```
 
-## Technical Indicators
-
-The feature engineering step adds 11 indicators computed with [pandas-ta](https://github.com/twopirllc/pandas-ta):
-
-| Indicator | Parameters | Description |
-|-----------|-----------|-------------|
-| RSI | 14 | Relative Strength Index |
-| MACD | 12/26/9 | Moving Average Convergence Divergence + Signal Line |
-| SMA | 10, 50 | Simple Moving Averages (short & medium-term) |
-| Bollinger Bands | 20, 2&sigma; | Upper and Lower volatility bands |
-| ATR | 14 | Average True Range |
-| OBV | - | On-Balance Volume |
-| Stochastic | %K(14), %D(3) | Overbought / oversold oscillator |
-
 ## Getting Started
-
-### Prerequisites
-
-- Python 3.10+
-- pip
-
-### Installation
 
 ```bash
 git clone https://github.com/SiegKat/btc-lstm-forecast.git
@@ -109,43 +166,20 @@ cd btc-lstm-forecast
 pip install -r requirements.txt
 ```
 
-### Running the Notebook
+Then open the notebook:
 
 ```bash
 cd notebooks
 jupyter notebook crypto_prediction.ipynb
 ```
 
-The notebook will:
-1. Download ~250K&ndash;750K candles per pair from Binance (requires internet)
-2. Preprocess and compute technical indicators
-3. Train a Bidirectional LSTM (~10 epochs)
-4. Train an MC-Dropout LSTM with uncertainty estimation (~10 epochs)
-5. Train a PPO trading agent (~50K timesteps)
-6. Generate predictions, uncertainty intervals, and a 500-step rolling forecast
-7. Download 3 months of unseen data and evaluate model drift at 1-week, 1-month, and 3-month horizons
+## Notes And Limitations
 
-## Technologies
-
-- **Deep Learning:** TensorFlow / Keras (Bidirectional LSTM, MC-Dropout)
-- **Reinforcement Learning:** Stable-Baselines3 (PPO), Gymnasium
-- **Data:** pandas, NumPy, Binance Vision public CSV API
-- **Feature Engineering:** pandas-ta
-- **Visualization:** Matplotlib
-
-## Limitations & Disclaimer
-
-- Models use only price/volume-derived features.
-- Auto-regressive forecasts accumulate error rapidly.
-- **This project is for educational purposes only. It does not constitute financial advice.**
-
-## Future Improvements
-
-- Transformer-based architectures (Temporal Fusion Transformer)
-- Multi-asset correlation features (ETH/BTC spread)
-- Walk-forward cross-validation for realistic backtesting
-- Paper-trading deployment for the RL agent
-- Hyperparameter optimization via Optuna
+- The forecasting models use only price and volume derived indicators.
+- MC-Dropout is the best short-horizon forecaster in the current run, but neither model is robust to multi-month regime drift.
+- The PPO section currently reuses the same transformed context as training, so it should not be treated as a strict out-of-sample trading result.
+- Auto-regressive long-horizon forecasts accumulate error quickly.
+- This project is educational and research-oriented, not financial advice.
 
 ## License
 
