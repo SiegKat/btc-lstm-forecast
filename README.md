@@ -12,6 +12,33 @@ This repository studies BTC/USDT price forecasting from two angles:
 
 The main walkthrough lives in `notebooks/crypto_prediction.ipynb`. The notebook now exports README-ready figures to `assets/readme/` whenever it runs, so the documentation stays tied to real notebook outputs instead of manually copied screenshots.
 
+## Motivation
+
+I have followed crypto since 2015 — back then I even posted a few Bitcoin videos on YouTube during 2015–2016 — and the topic has stayed with me ever since. During the COVID pandemic I picked up trading and chart analysis more seriously, and when I started studying machine learning and deep learning in 2024 the natural next step was to try a forecasting project on Bitcoin.
+
+The trigger for the first version of this project was a class. While I was learning LSTMs in deep learning, my machine learning professor, Ali Muhamed Ali, introduced our group to one of his own papers: Wang, Zhuang, Chérubin, Ibrahim, and Muhamed Ali (2019), *Medium-Term Forecasting of Loop Current Eddy Cameron and Eddy Darwin Formation in the Gulf of Mexico With a Divide-and-Conquer Machine Learning Approach* ([JGR Oceans, 10.1029/2019JC015172](https://doi.org/10.1029/2019JC015172)). That timing made me want to take a similar modeling philosophy and apply it in a domain I actually cared about.
+
+### How This Project Relates To The Paper
+
+The connection is methodological, not topical. The paper forecasts sea surface height in the Gulf of Mexico with a divide-and-conquer LSTM that uses EOF / principal components, partitioned subregions, and a smoothing function across partition boundaries. None of that machinery is reproduced here — this repository is a one-dimensional financial time-series project on BTC OHLCV, with technical indicators in [src/features.py](src/features.py) and recurrent models in [src/lstm_model.py](src/lstm_model.py).
+
+What carries over is the underlying ML question: can an LSTM-family model learn enough temporal structure from past sequences to make useful forecasts beyond the immediate next step, and how fast does that skill decay as the horizon grows? That framing is what shaped the unseen 1-week, 1-month, and 3-month evaluations described in [Unseen-Data Validation](#unseen-data-validation), as well as the rolling forward forecast in the notebook. The paper is a useful precedent for medium-horizon recurrent forecasting under compounding error, not a structural template. Specific choices like the `LOOKBACK = 60` input window and the BiLSTM / MC-Dropout / PPO stack are project-specific decisions, not transcriptions from the paper.
+
+### From The First Version To The Current One
+
+The first version of this project trained well and tested well, but it generalized badly on truly unseen data. At the time I did not have a good explanation for the gap; in hindsight the most likely cause was overfitting — the model had latched onto patterns specific to the training and held-out test windows and had no real handle on regime change or compounding error over longer horizons.
+
+I recently came back to the project to address that, this time with help from Claude Code, and the current version is the result of that revisit. Concretely, the new version adds:
+
+- **An honest unseen-data protocol.** Performance is now reported on a strictly held-out 15-minute BTC window over three horizons (1 week, 1 month, 3 months), so generalization failures are visible instead of hidden behind a single train/test split.
+- **MC-Dropout uncertainty.** A second LSTM exposes prediction intervals and confidence bands. In the latest run it cuts unseen RMSE by ~41% over 1 week and ~60% over 1 month versus the deterministic BiLSTM, while also flagging when the model is unsure.
+- **A richer feature space.** The feature module now includes RSI, MACD, signal line, SMA(10/50), Bollinger Bands, ATR, OBV, and stochastic oscillator instead of price alone.
+- **A PPO trading agent** on the same feature space, so the project compares supervised next-step forecasting with policy learning on the same context.
+- **A 500-step rolling future forecast** that is intentionally presented as a failure mode: long-horizon autoregressive prediction drifts along an unrealistically smooth path, which makes the limitation explicit rather than hiding it.
+- **Reproducible documentation.** The figures and metrics in this README are exported by the notebook into `assets/readme/`, so the documentation stays tied to actual model output and refreshes whenever the notebook is rerun end-to-end.
+
+The headline result is closer to what the paper anticipated for recurrent medium-term forecasting: short and medium-horizon prediction can be genuinely useful, but skill decays quickly as the horizon grows. The current models do well at 1 week and 1 month and degrade sharply by 3 months, which is both consistent with that picture and a much more honest answer than the first version of this project was able to give.
+
 ## What The Project Does
 
 The pipeline pulls Binance Vision candlestick data, engineers technical indicators, trains sequential models on BTC/USDT 15-minute candles, and compares deterministic forecasting against uncertainty-aware forecasting. The later notebook sections also train a PPO agent, generate a rolling future forecast, and test model quality on unseen months.
